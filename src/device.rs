@@ -363,7 +363,7 @@ impl Device {
                 channels.as_ptr(), channels.len(),
                 args.into().as_raw_const()
             )).map(|_| RxStream {
-                device: self,
+                device: self.ptr,
                 handle: stream,
                 nchannels: channels.len(),
                 flags: 0,
@@ -390,7 +390,7 @@ impl Device {
                 channels.as_ptr(), channels.len(),
                 args.into().as_raw_const()
             )).map(|_| TxStream {
-                device: self,
+                device: self.ptr,
                 handle: stream,
                 nchannels: channels.len(),
                 active: false,
@@ -817,8 +817,8 @@ impl Device {
 /// of this stream's samples.
 ///
 /// Streams may involve multiple channels.
-pub struct RxStream<'a, E: StreamSample> {
-    device: &'a Device,
+pub struct RxStream<E: StreamSample> {
+    device: *mut SoapySDRDevice,
     handle: *mut SoapySDRStream,
     nchannels: usize,
     flags: i32,
@@ -827,18 +827,18 @@ pub struct RxStream<'a, E: StreamSample> {
     phantom: PhantomData<fn(&mut[E])>,
 }
 
-impl<'a, E: StreamSample> Drop for RxStream<'a, E> {
+impl<E: StreamSample> Drop for RxStream<E> {
     fn drop(&mut self) {
         unsafe {
             if self.active {
                 self.deactivate(None).ok();
             }
-            SoapySDRDevice_closeStream(self.device.ptr, self.handle);
+            SoapySDRDevice_closeStream(self.device, self.handle);
         }
     }
 }
 
-impl<'a, E: StreamSample> RxStream<'a, E> {
+impl<E: StreamSample> RxStream<E> {
     /// Get the stream's maximum transmission unit (MTU) in number of elements.
     ///
     /// The MTU specifies the maximum payload transfer in a stream operation.
@@ -846,7 +846,7 @@ impl<'a, E: StreamSample> RxStream<'a, E> {
     /// best optimize throughput given the underlying stream implementation.
     pub fn mtu(&self) -> Result<usize, Error> {
         unsafe {
-            check_error(SoapySDRDevice_getStreamMTU(self.device.ptr, self.handle))
+            check_error(SoapySDRDevice_getStreamMTU(self.device, self.handle))
         }
     }
 
@@ -860,7 +860,7 @@ impl<'a, E: StreamSample> RxStream<'a, E> {
         if self.active { return Err(Error { code: ErrorCode::Other, message: "Stream is already active".into() }); }
         unsafe {
             let flags = if time_ns.is_some() { SOAPY_SDR_HAS_TIME as i32 } else { 0 };
-            check_ret_error(SoapySDRDevice_activateStream(self.device.ptr, self.handle, flags, time_ns.unwrap_or(0), 0))?;
+            check_ret_error(SoapySDRDevice_activateStream(self.device, self.handle, flags, time_ns.unwrap_or(0), 0))?;
             self.active = true;
             Ok(())
         }
@@ -877,7 +877,7 @@ impl<'a, E: StreamSample> RxStream<'a, E> {
         if !self.active { return Err(Error { code: ErrorCode::Other, message: "Stream is not active".into() }); }
         unsafe {
             let flags = if time_ns.is_some() { SOAPY_SDR_HAS_TIME as i32 } else { 0 };
-            check_ret_error(SoapySDRDevice_deactivateStream(self.device.ptr, self.handle, flags, time_ns.unwrap_or(0)))?;
+            check_ret_error(SoapySDRDevice_deactivateStream(self.device, self.handle, flags, time_ns.unwrap_or(0)))?;
             self.active = false;
             Ok(())
         }
@@ -902,7 +902,7 @@ impl<'a, E: StreamSample> RxStream<'a, E> {
 
             self.flags = 0;
             let len = len_result(SoapySDRDevice_readStream(
-                self.device.ptr,
+                self.device,
                 self.handle,
                 buf_ptrs.as_ptr() as *const *const _,
                 num_samples,
@@ -923,26 +923,26 @@ impl<'a, E: StreamSample> RxStream<'a, E> {
 /// of this stream's samples.
 ///
 /// Streams may involve multiple channels.
-pub struct TxStream<'a, E: StreamSample> {
-    device: &'a Device,
+pub struct TxStream<E: StreamSample> {
+    device: *mut SoapySDRDevice,
     handle: *mut SoapySDRStream,
     nchannels: usize,
     active: bool,
     phantom: PhantomData<fn(&[E])>,
 }
 
-impl<'a, E: StreamSample> Drop for TxStream<'a, E> {
+impl<E: StreamSample> Drop for TxStream<E> {
     fn drop(&mut self) {
         unsafe {
             if self.active {
                 self.deactivate(None).ok();
             }
-            SoapySDRDevice_closeStream(self.device.ptr, self.handle);
+            SoapySDRDevice_closeStream(self.device, self.handle);
         }
     }
 }
 
-impl<'a, E: StreamSample> TxStream<'a, E> {
+impl<E: StreamSample> TxStream<E> {
     /// Get the stream's maximum transmission unit (MTU) in number of elements.
     ///
     /// The MTU specifies the maximum payload transfer in a stream operation.
@@ -950,7 +950,7 @@ impl<'a, E: StreamSample> TxStream<'a, E> {
     /// best optimize throughput given the underlying stream implementation.
     pub fn mtu(&self) -> Result<usize, Error> {
         unsafe {
-            check_error(SoapySDRDevice_getStreamMTU(self.device.ptr, self.handle))
+            check_error(SoapySDRDevice_getStreamMTU(self.device, self.handle))
         }
     }
 
@@ -964,7 +964,7 @@ impl<'a, E: StreamSample> TxStream<'a, E> {
         if self.active { return Err(Error { code: ErrorCode::Other, message: "Stream is already active".into() }); }
         unsafe {
             let flags = if time_ns.is_some() { SOAPY_SDR_HAS_TIME as i32 } else { 0 };
-            check_ret_error(SoapySDRDevice_activateStream(self.device.ptr, self.handle, flags, time_ns.unwrap_or(0), 0))?;
+            check_ret_error(SoapySDRDevice_activateStream(self.device, self.handle, flags, time_ns.unwrap_or(0), 0))?;
             self.active = true;
             Ok(())
         }
@@ -979,7 +979,7 @@ impl<'a, E: StreamSample> TxStream<'a, E> {
         if !self.active { return Err(Error { code: ErrorCode::Other, message: "Stream is not active".into() }); }
         unsafe {
             let flags = if time_ns.is_some() { SOAPY_SDR_HAS_TIME as i32 } else { 0 };
-            check_ret_error(SoapySDRDevice_deactivateStream(self.device.ptr, self.handle, flags, time_ns.unwrap_or(0)))?;
+            check_ret_error(SoapySDRDevice_deactivateStream(self.device, self.handle, flags, time_ns.unwrap_or(0)))?;
             self.active = false;
             Ok(())
         }
@@ -1023,7 +1023,7 @@ impl<'a, E: StreamSample> TxStream<'a, E> {
             }
 
             let len = len_result(SoapySDRDevice_writeStream(
-                self.device.ptr,
+                self.device,
                 self.handle,
                 buf_ptrs.as_ptr() as *const *const _,
                 num_elems,
